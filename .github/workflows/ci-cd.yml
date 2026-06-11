@@ -1,0 +1,62 @@
+name: CI/CD — Build, Push & Deploy
+
+on:
+  push:
+    branches: [main]
+
+env:
+  API_IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/portfolio-api
+  REACT_IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/portfolio-react
+
+jobs:
+  # ──────────────────────────────────────────
+  # BUILD & PUSH — Images Docker
+  # ──────────────────────────────────────────
+  build-push:
+    name: Build & Push Docker images
+    runs-on: self-hosted
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build & push API
+        uses: docker/build-push-action@v5
+        with:
+          context: ./portfolio-api
+          push: true
+          tags: ${{ env.API_IMAGE }}:latest,${{ env.API_IMAGE }}:${{ github.sha }}
+
+      - name: Build & push React
+        uses: docker/build-push-action@v5
+        with:
+          context: ./portfolio-react
+          push: true
+          tags: ${{ env.REACT_IMAGE }}:latest,${{ env.REACT_IMAGE }}:${{ github.sha }}
+
+  # ──────────────────────────────────────────
+  # DEPLOY — Terraform apply
+  # ──────────────────────────────────────────
+  deploy:
+    name: Deploy with Terraform
+    runs-on: self-hosted
+    needs: build-push
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Terraform Init
+        working-directory: terraform-k8s-portfolio
+        run: terraform init
+
+      - name: Terraform Apply
+        working-directory: terraform-k8s-portfolio
+        run: |
+          terraform apply -auto-approve \
+            -var="api_image=${{ env.API_IMAGE }}:${{ github.sha }}" \
+            -var="react_image=${{ env.REACT_IMAGE }}:${{ github.sha }}"

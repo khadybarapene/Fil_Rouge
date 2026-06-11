@@ -1,0 +1,12 @@
+# Runner GitHub Actions
+terraform-k8s-portfolio/actions-runner/
+
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfvars
+.terraform.lock.hcl
+
+# Node
+node_modules/
