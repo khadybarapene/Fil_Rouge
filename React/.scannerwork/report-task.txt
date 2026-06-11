@@ -1,0 +1,6 @@
+projectKey=portfolio-react
+serverUrl=http://localhost:9000
+serverVersion=10.7.0.96327
+dashboardUrl=http://localhost:9000/dashboard?id=portfolio-react
+ceTaskId=d00e4ae4-bfb1-46fb-b0c8-aaf577d147fe
+ceTaskUrl=http://localhost:9000/api/ce/task?id=d00e4ae4-bfb1-46fb-b0c8-aaf577d147fe
