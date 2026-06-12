@@ -10,3 +10,4 @@ terraform-k8s-portfolio/actions-runner/
 
 # Node
 node_modules/
+class=token-string
