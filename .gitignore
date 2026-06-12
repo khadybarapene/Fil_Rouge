@@ -13,4 +13,5 @@ node_modules/
 class=token-string
 .scannerwork/
 awscliv2.zip
-.env.sonar
+.env.sonar.env
+config/secrets.yml
