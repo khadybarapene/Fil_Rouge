@@ -1,4 +1,4 @@
-name: CI/CD — Build, Push & Deploy
+name: CI/CD — Build & Push
 
 on:
   push:
@@ -9,9 +9,6 @@ env:
   REACT_IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/portfolio-react
 
 jobs:
-  # ──────────────────────────────────────────
-  # BUILD & PUSH — Images Docker
-  # ──────────────────────────────────────────
   build-push:
     name: Build & Push Docker images
     runs-on: self-hosted
@@ -38,25 +35,3 @@ jobs:
           context: ./portfolio-react
           push: true
           tags: ${{ env.REACT_IMAGE }}:latest,${{ env.REACT_IMAGE }}:${{ github.sha }}
-
-  # ──────────────────────────────────────────
-  # DEPLOY — Terraform apply
-  # ──────────────────────────────────────────
-  deploy:
-    name: Deploy with Terraform
-    runs-on: self-hosted
-    needs: build-push
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Terraform Init
-        working-directory: terraform-k8s-portfolio
-        run: terraform init
-
-      - name: Terraform Apply
-        working-directory: terraform-k8s-portfolio
-        run: |
-          terraform apply -auto-approve \
-            -var="api_image=${{ env.API_IMAGE }}:${{ github.sha }}" \
-            -var="react_image=${{ env.REACT_IMAGE }}:${{ github.sha }}"
