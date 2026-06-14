@@ -5,6 +5,7 @@ pipeline {
         BACKEND_IMAGE  = 'khady2026/portfolio-api'
         FRONTEND_IMAGE = 'khady2026/portfolio-react'
         TF_DIR         = "${WORKSPACE}/terraform-k8s"
+        TF_PLAN        = "${WORKSPACE}/terraform-k8s/tfplan-${BUILD_NUMBER}"
     }
 
     triggers {
@@ -14,6 +15,7 @@ pipeline {
     options {
         timeout(time: 60, unit: 'MINUTES')
         buildDiscarder(logRotator(numToKeepStr: '5'))
+        disableConcurrentBuilds()  // evite les conflits de tfplan
     }
 
     stages {
@@ -51,27 +53,42 @@ pipeline {
                             /opt/sonar-scanner/bin/sonar-scanner \
                                 -Dsonar.projectKey=portfolio-api \
                                 -Dsonar.host.url="http://localhost:9000" \
-                                -Dsonar.login="$TOKEN_API"
+                                -Dsonar.token="$TOKEN_API"
 
                             echo "=== ANALYSE FRONTEND ==="
                             cd ../React
                             /opt/sonar-scanner/bin/sonar-scanner \
                                 -Dsonar.projectKey=portfolio-react \
                                 -Dsonar.host.url="http://localhost:9000" \
-                                -Dsonar.login="$TOKEN_REACT"
+                                -Dsonar.token="$TOKEN_REACT"
                         '''
                     }
                 }
             }
         }
 
-        stage('Build & Deploy Docker') {
+        stage('Build & Push Docker') {
             steps {
-                sh '''
-                    docker compose -p dockerisation \
-                    -f $WORKSPACE/docker-compose.yml \
-                    up -d --build --force-recreate --no-deps mongo api react
-                '''
+                withCredentials([
+                    usernamePassword(
+                        credentialsId: 'dockerhub-credentials',
+                        usernameVariable: 'DOCKER_USER',
+                        passwordVariable: 'DOCKER_PASS'
+                    )
+                ]) {
+                    sh '''
+                        echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+
+                        docker compose -p dockerisation \
+                            -f $WORKSPACE/docker-compose.yml \
+                            up -d --build --force-recreate --no-deps mongo api react
+
+                        docker push $BACKEND_IMAGE:latest
+                        docker push $FRONTEND_IMAGE:latest
+
+                        docker logout
+                    '''
+                }
             }
         }
 
@@ -88,7 +105,7 @@ pipeline {
 
                         cd $TF_DIR
                         terraform init -input=false
-                        terraform plan -input=false -out=tfplan
+                        terraform plan -input=false -out=$TF_PLAN
                     '''
                 }
             }
@@ -106,7 +123,7 @@ pipeline {
                         export AWS_DEFAULT_REGION=eu-west-3
 
                         cd $TF_DIR
-                        terraform apply -input=false -auto-approve tfplan
+                        terraform apply -input=false -auto-approve $TF_PLAN
                     '''
                 }
             }
@@ -116,10 +133,10 @@ pipeline {
             steps {
                 sh '''
                     kubectl --kubeconfig=/var/lib/jenkins/.kube/config \
-                        set image deployment/portfolio-api api=khady2026/portfolio-api:latest -n portfolio
+                        set image deployment/portfolio-api api=$BACKEND_IMAGE:latest -n portfolio
 
                     kubectl --kubeconfig=/var/lib/jenkins/.kube/config \
-                        set image deployment/portfolio-react react=khady2026/portfolio-react:latest -n portfolio
+                        set image deployment/portfolio-react react=$FRONTEND_IMAGE:latest -n portfolio
 
                     kubectl --kubeconfig=/var/lib/jenkins/.kube/config \
                         rollout status deployment/portfolio-api -n portfolio --timeout=120s
@@ -137,18 +154,27 @@ pipeline {
     post {
         success {
             mail to: 'khadypene267@gmail.com',
-                subject: "✅SUCCESS - ${env.JOB_NAME} #${env.BUILD_NUMBER}",
-                body: "Pipeline OK\nFrontend: http://localhost:3000\nBackend: http://localhost:5000\nSonarQube: http://localhost:9000"
+                subject: "SUCCESS - ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+                body: """Pipeline OK
+Build: ${env.BUILD_URL}
+Frontend: http://localhost:3000
+Backend:  http://localhost:5000
+SonarQube: http://localhost:9000"""
         }
 
         failure {
             mail to: 'khadypene267@gmail.com',
-                subject: "❌FAILED - ${env.JOB_NAME} #${env.BUILD_NUMBER}",
-                body: "Pipeline echoue\n${env.BUILD_URL}"
+                subject: "FAILED - ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+                body: """Pipeline echoue
+Build: ${env.BUILD_URL}
+Consultez les logs pour plus de details."""
         }
 
         always {
-            sh 'docker ps --format "table {{.Names}}\\t{{.Status}}\\t{{.Ports}}" || true'
+            sh '''
+                docker ps --format "table {{.Names}}\\t{{.Status}}\\t{{.Ports}}" || true
+                rm -f $TF_PLAN
+            '''
         }
     }
 }
