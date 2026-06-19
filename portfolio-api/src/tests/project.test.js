@@ -40,6 +40,15 @@ describe('GET / — Health Check', () => {
   });
 });
 
+describe('GET /metrics — Prometheus', () => {
+  it('devrait exposer les métriques Prometheus', async () => {
+    const res = await request(app).get('/metrics');
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toContain('text/plain');
+    expect(res.text).toContain('portfolio_api_http_requests_total');
+  });
+});
+
 // ── TEST 2 : Créer un projet ─────────────────────────────────────
 describe('POST /api/projects', () => {
   it('devrait créer un projet valide', async () => {
