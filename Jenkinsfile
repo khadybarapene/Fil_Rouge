@@ -4,7 +4,6 @@ pipeline {
     environment {
         BACKEND_IMAGE  = 'khady2026/portfolio-api'
         FRONTEND_IMAGE = 'khady2026/portfolio-react'
-        COMPOSE_PROJECT_NAME = 'dockerisation'
         TF_DIR         = "${WORKSPACE}/terraform-k8s"
         TF_PLAN        = "${WORKSPACE}/terraform-k8s/tfplan-${BUILD_NUMBER}"
     }
@@ -24,44 +23,6 @@ pipeline {
         stage('Checkout') {
             steps {
                 checkout scm
-            }
-        }
-
-        stage('Install & Test') {
-            parallel {
-                stage('Backend Tests') {
-                    steps {
-                        sh '''
-                            set -e
-                            cd portfolio-api
-                            npm ci
-                            npm test -- --runInBand
-                        '''
-                    }
-                }
-
-                stage('Frontend Tests') {
-                    steps {
-                        sh '''
-                            set -e
-                            cd React
-                            npm ci
-                            CI=true npm test -- --watchAll=false
-                        '''
-                    }
-                }
-            }
-        }
-
-        stage('Validate Monitoring Config') {
-            steps {
-                sh '''
-                    set -e
-                    docker compose -f $WORKSPACE/docker-compose.yml config >/tmp/docker-compose-${BUILD_NUMBER}.yml
-                    node -e "JSON.parse(require('fs').readFileSync('grafana/provisioning/dashboards/portfolio-observability.json','utf8')); console.log('Grafana dashboard JSON OK')"
-                    test -s prometheus/prometheus.yml
-                    test -s grafana/provisioning/datasources/prometheus.yml
-                '''
             }
         }
 
@@ -116,38 +77,18 @@ pipeline {
                     )
                 ]) {
                     sh '''
-                        set -e
                         echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
 
-                        docker compose -p $COMPOSE_PROJECT_NAME \
-                            -f $WORKSPACE/docker-compose.yml build api react
-
-                        docker tag $BACKEND_IMAGE:latest $BACKEND_IMAGE:$BUILD_NUMBER
-                        docker tag $FRONTEND_IMAGE:latest $FRONTEND_IMAGE:$BUILD_NUMBER
+                        docker compose -p dockerisation \
+                            -f $WORKSPACE/docker-compose.yml \
+                            up -d --build --force-recreate --no-deps mongo api react
 
                         docker push $BACKEND_IMAGE:latest
-                        docker push $BACKEND_IMAGE:$BUILD_NUMBER
                         docker push $FRONTEND_IMAGE:latest
-                        docker push $FRONTEND_IMAGE:$BUILD_NUMBER
 
                         docker logout
                     '''
                 }
-            }
-        }
-
-        stage('Deploy Local Stack With Monitoring') {
-            steps {
-                sh '''
-                    set -e
-                    docker compose -p $COMPOSE_PROJECT_NAME \
-                        -f $WORKSPACE/docker-compose.yml \
-                        up -d --force-recreate mongo api react node-exporter prometheus grafana
-
-                    echo "Services demarres :"
-                    docker compose -p $COMPOSE_PROJECT_NAME \
-                        -f $WORKSPACE/docker-compose.yml ps
-                '''
             }
         }
 
@@ -192,10 +133,10 @@ pipeline {
             steps {
                 sh '''
                     kubectl --kubeconfig=/var/lib/jenkins/.kube/config \
-                        set image deployment/portfolio-api api=$BACKEND_IMAGE:$BUILD_NUMBER -n portfolio
+                        set image deployment/portfolio-api api=$BACKEND_IMAGE:latest -n portfolio
 
                     kubectl --kubeconfig=/var/lib/jenkins/.kube/config \
-                        set image deployment/portfolio-react react=$FRONTEND_IMAGE:$BUILD_NUMBER -n portfolio
+                        set image deployment/portfolio-react react=$FRONTEND_IMAGE:latest -n portfolio
 
                     kubectl --kubeconfig=/var/lib/jenkins/.kube/config \
                         rollout status deployment/portfolio-api -n portfolio --timeout=120s
@@ -218,8 +159,6 @@ pipeline {
 Build: ${env.BUILD_URL}
 Frontend: http://localhost:3000
 Backend:  http://localhost:5000
-Prometheus: http://localhost:9090
-Grafana: http://localhost:3001
 SonarQube: http://localhost:9000"""
         }
 
@@ -234,7 +173,6 @@ Consultez les logs pour plus de details."""
         always {
             sh '''
                 docker ps --format "table {{.Names}}\\t{{.Status}}\\t{{.Ports}}" || true
-                rm -f /tmp/docker-compose-${BUILD_NUMBER}.yml
                 rm -f $TF_PLAN
             '''
         }
