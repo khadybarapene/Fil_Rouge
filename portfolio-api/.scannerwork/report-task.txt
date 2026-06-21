@@ -1,6 +1,6 @@
-projectKey=Portfolio-API-Express-
+projectKey=portfolio-api
 serverUrl=http://localhost:9000
 serverVersion=10.7.0.96327
-dashboardUrl=http://localhost:9000/dashboard?id=Portfolio-API-Express-
-ceTaskId=f3bc968e-daaa-463b-8afa-b3d601ca9e10
-ceTaskUrl=http://localhost:9000/api/ce/task?id=f3bc968e-daaa-463b-8afa-b3d601ca9e10
+dashboardUrl=http://localhost:9000/dashboard?id=portfolio-api
+ceTaskId=995c5978-035d-487e-a42c-fd63e7e52e54
+ceTaskUrl=http://localhost:9000/api/ce/task?id=995c5978-035d-487e-a42c-fd63e7e52e54

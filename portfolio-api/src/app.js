@@ -7,6 +7,27 @@ require('dotenv').config();
 const express    = require('express');
 const connectDB  = require('./config/connectdb');
 const projectRoutes = require('./routes/projectRoutes');
+const client     = require('prom-client');
+const Project    = require('./models/Project');
+
+// ── Prometheus : collecte des métriques par défaut ────────────────────────────
+const register = new client.Registry();
+client.collectDefaultMetrics({ register });
+
+// Compteur custom : nombre de requêtes HTTP par méthode et route
+const httpRequestCounter = new client.Counter({
+  name: 'http_requests_total',
+  help: 'Nombre total de requêtes HTTP',
+  labelNames: ['method', 'route', 'status'],
+  registers: [register],
+});
+
+// Jauge custom : nombre de projets actuellement en base
+const projectsGauge = new client.Gauge({
+  name: 'portfolio_projects_total',
+  help: 'Nombre total de projets actuellement en base de données',
+  registers: [register],
+});
 
 // ── Connexion à MongoDB ───────────────────────────────────────────────────────
 if (process.env.NODE_ENV !== 'test') {
@@ -34,9 +55,16 @@ app.use((req, res, next) => {
   next();
 });
 
-// Logger minimal des requêtes entrantes
-app.use((req, _res, next) => {
+// Logger minimal des requêtes entrantes + compteur Prometheus
+app.use((req, res, next) => {
   console.log(`[${new Date().toISOString()}] ${req.method} ${req.originalUrl}`);
+  res.on('finish', () => {
+    httpRequestCounter.inc({
+      method: req.method,
+      route: req.originalUrl.split('?')[0],
+      status: res.statusCode,
+    });
+  });
   next();
 });
 
@@ -56,6 +84,18 @@ app.get('/', (_req, res) => {
 
 // Routes des projets
 app.use('/api/projects', projectRoutes);
+
+// ── Endpoint Prometheus ───────────────────────────────────────────────────────
+app.get('/metrics', async (_req, res) => {
+  try {
+    const count = await Project.countDocuments();
+    projectsGauge.set(count);
+  } catch (err) {
+    console.error('Erreur mise à jour métrique projets :', err.message);
+  }
+  res.set('Content-Type', register.contentType);
+  res.end(await register.metrics());
+});
 
 // ── Gestion des routes inexistantes (404) ─────────────────────────────────────
 app.use((req, res) => {
