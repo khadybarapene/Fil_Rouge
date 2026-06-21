@@ -29,6 +29,15 @@ const projectsGauge = new client.Gauge({
   registers: [register],
 });
 
+// Histogramme custom : durée des requêtes HTTP (en secondes)
+const httpRequestDuration = new client.Histogram({
+  name: 'http_request_duration_seconds',
+  help: 'Durée des requêtes HTTP en secondes',
+  labelNames: ['method', 'route', 'status'],
+  buckets: [0.01, 0.05, 0.1, 0.3, 0.5, 1, 2, 5],
+  registers: [register],
+});
+
 // ── Connexion à MongoDB ───────────────────────────────────────────────────────
 if (process.env.NODE_ENV !== 'test') {
   connectDB();
@@ -55,15 +64,28 @@ app.use((req, res, next) => {
   next();
 });
 
-// Logger minimal des requêtes entrantes + compteur Prometheus
+// Logger minimal des requêtes entrantes + compteur/histogramme Prometheus
 app.use((req, res, next) => {
+  const start = Date.now();
   console.log(`[${new Date().toISOString()}] ${req.method} ${req.originalUrl}`);
   res.on('finish', () => {
+    const route = req.originalUrl.split('?')[0];
+    const durationSeconds = (Date.now() - start) / 1000;
+
     httpRequestCounter.inc({
       method: req.method,
-      route: req.originalUrl.split('?')[0],
+      route,
       status: res.statusCode,
     });
+
+    httpRequestDuration.observe(
+      {
+        method: req.method,
+        route,
+        status: res.statusCode,
+      },
+      durationSeconds
+    );
   });
   next();
 });
